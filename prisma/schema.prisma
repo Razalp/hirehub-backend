@@ -1,0 +1,177 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ══════════════════════════════════════════════════════════
+// ENUMS
+// ══════════════════════════════════════════════════════════
+
+enum Role {
+  CANDIDATE
+  ADMIN
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERNSHIP
+}
+
+enum RemoteOption {
+  REMOTE
+  HYBRID
+  ON_SITE
+}
+
+enum JobStatus {
+  ACTIVE
+  DRAFT
+  CLOSED
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWED
+  ACCEPTED
+  REJECTED
+}
+
+// ══════════════════════════════════════════════════════════
+// MODELS
+// ══════════════════════════════════════════════════════════
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(CANDIDATE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  profile      Profile?
+  applications Application[]
+  postedJobs   Job[]         @relation("AdminJobs")
+  bookmarks    Bookmark[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Profile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  phone             String?
+  resumeUrl         String?
+  skills            String[] // PostgreSQL text[]
+  experienceLevel   String?
+  currentSalary     String?
+  preferredLocation String?
+  jobType           String?
+  isRemoteOnly      Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  initial   String   @db.VarChar(2)
+  color     String   // Tailwind gradient class e.g. "from-blue-500 to-red-500"
+  industry  String   @default("Technology")
+  size      String   @default("10,000+")
+  website   String   @default("company.com")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs Job[]
+
+  @@map("companies")
+}
+
+model Job {
+  id               String       @id @default(uuid())
+  title            String
+  companyId        String
+  location         String
+  experience       String       // e.g. "3-5 Years"
+  salary           String       // e.g. "₹20 - 30 LPA"
+  type             JobType
+  remote           RemoteOption
+  skills           String[]     // PostgreSQL text[]
+  category         String
+  description      String       @db.Text
+  requirements     String[]     // PostgreSQL text[]
+  responsibilities String[]     // PostgreSQL text[]
+  benefits         String[]     // PostgreSQL text[]
+  status           JobStatus    @default(DRAFT)
+  featured         Boolean      @default(false)
+  postedById       String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  postedBy     User          @relation("AdminJobs", fields: [postedById], references: [id], onDelete: Cascade)
+  applications Application[]
+  bookmarks    Bookmark[]
+
+  @@index([status, category])
+  @@index([title])
+  @@map("jobs")
+}
+
+model Application {
+  id          String            @id @default(uuid())
+  jobId       String
+  candidateId String
+  name        String
+  email       String
+  phone       String
+  resumeUrl   String
+  coverLetter String?           @db.Text
+  status      ApplicationStatus @default(PENDING)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  job       Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  candidate User @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, candidateId])
+  @@index([status])
+  @@map("applications")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  jobId     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@map("bookmarks")
+}
+
+model NewsletterSubscription {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@map("newsletter_subscriptions")
+}
