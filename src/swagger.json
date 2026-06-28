@@ -1,0 +1,780 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "HireHub API",
+    "version": "1.0.0",
+    "description": "Express.js REST API with Prisma and PostgreSQL for the HireHub Premium Job Portal."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000/api",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter JWT token. Admin endpoints require an admin token, candidate endpoints require a candidate token."
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["CANDIDATE", "ADMIN"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "phone": { "type": "string", "nullable": true },
+          "resumeUrl": { "type": "string", "nullable": true },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "experienceLevel": { "type": "string", "nullable": true },
+          "currentSalary": { "type": "string", "nullable": true },
+          "preferredLocation": { "type": "string", "nullable": true },
+          "jobType": { "type": "string", "nullable": true },
+          "isRemoteOnly": { "type": "boolean" }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "company": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "initial": { "type": "string" },
+              "color": { "type": "string" }
+            }
+          },
+          "location": { "type": "string" },
+          "experience": { "type": "string" },
+          "salary": { "type": "string" },
+          "type": { "type": "string", "enum": ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERNSHIP"] },
+          "remote": { "type": "string", "enum": ["REMOTE", "HYBRID", "ON_SITE"] },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "category": { "type": "string" },
+          "description": { "type": "string" },
+          "requirements": { "type": "array", "items": { "type": "string" } },
+          "responsibilities": { "type": "array", "items": { "type": "string" } },
+          "benefits": { "type": "array", "items": { "type": "string" } },
+          "status": { "type": "string", "enum": ["ACTIVE", "DRAFT", "CLOSED"] },
+          "featured": { "type": "boolean" },
+          "postedAt": { "type": "string", "format": "date-time" },
+          "applicantsCount": { "type": "integer" }
+        }
+      },
+      "Application": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "jobId": { "type": "string", "format": "uuid" },
+          "candidateId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string" },
+          "resumeUrl": { "type": "string" },
+          "status": { "type": "string", "enum": ["PENDING", "REVIEWED", "ACCEPTED", "REJECTED"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "summary": "Register a new Candidate user",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "password"],
+                "properties": {
+                  "name": { "type": "string", "example": "Jane Doe" },
+                  "email": { "type": "string", "format": "email", "example": "jane@company.com" },
+                  "password": { "type": "string", "minLength": 8, "example": "SecurePassword123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "token": { "type": "string" },
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Email already in use / Invalid input" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Login as Candidate",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "jane@company.com" },
+                  "password": { "type": "string", "example": "SecurePassword123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "token": { "type": "string" },
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get authenticated user details and profile",
+        "tags": ["Authentication"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "User details retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "user": {
+                      "allOf": [
+                        { "$ref": "#/components/schemas/User" },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": { "$ref": "#/components/schemas/Profile" }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized / Token missing or invalid" }
+        }
+      }
+    },
+    "/admin/auth/login": {
+      "post": {
+        "summary": "Login as Admin",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "admin@hirehub.com" },
+                  "password": { "type": "string", "example": "Admin@1234" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "token": { "type": "string" },
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "Access denied / Not an administrator" }
+        }
+      }
+    },
+    "/jobs": {
+      "get": {
+        "summary": "Query & search public job listings",
+        "tags": ["Jobs"],
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search title, company, skills" },
+          { "name": "category", "in": "query", "schema": { "type": "string" }, "description": "Filter by category (e.g. Frontend)" },
+          { "name": "experience", "in": "query", "schema": { "type": "string" }, "description": "Filter by experience level" },
+          { "name": "location", "in": "query", "schema": { "type": "string" }, "description": "Filter by location" },
+          { "name": "type", "in": "query", "schema": { "type": "string" }, "description": "Job type (FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP)" },
+          { "name": "remoteOnly", "in": "query", "schema": { "type": "boolean" }, "description": "Filter remote only" },
+          { "name": "minSalary", "in": "query", "schema": { "type": "integer" } },
+          { "name": "maxSalary", "in": "query", "schema": { "type": "integer" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["latest", "popular"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Jobs retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "count": { "type": "integer" },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "currentPage": { "type": "integer" },
+                        "totalPages": { "type": "integer" }
+                      }
+                    },
+                    "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/Job" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/featured": {
+      "get": {
+        "summary": "Get featured job posts for homepage",
+        "tags": ["Jobs"],
+        "responses": {
+          "200": {
+            "description": "Featured jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/Job" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/categories": {
+      "get": {
+        "summary": "Get job categories and active posting counts",
+        "tags": ["Jobs"],
+        "responses": {
+          "200": {
+            "description": "Category aggregations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "count": { "type": "integer" },
+                          "icon": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{id}": {
+      "get": {
+        "summary": "Get details of a single job posting",
+        "tags": ["Jobs"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detailed job specifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "job": { "$ref": "#/components/schemas/Job" },
+                    "relatedJobs": { "type": "array", "items": { "$ref": "#/components/schemas/Job" } }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Job not found" }
+        }
+      }
+    },
+    "/jobs/{id}/apply": {
+      "post": {
+        "summary": "Apply to a job posting",
+        "tags": ["Candidate Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email", "phone"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "phone": { "type": "string" },
+                  "coverLetter": { "type": "string" },
+                  "resume": { "type": "string", "format": "binary", "description": "Resume file (PDF, Word) up to 5MB" },
+                  "useProfileResume": { "type": "boolean", "description": "Set to true to skip file upload and use resume from user profile" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Application submitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "application": { "$ref": "#/components/schemas/Application" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Already applied / Missing required parameters" }
+        }
+      }
+    },
+    "/jobs/{id}/bookmark": {
+      "post": {
+        "summary": "Bookmark a job post",
+        "tags": ["Candidate Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Job bookmarked" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "delete": {
+        "summary": "Remove a job bookmark",
+        "tags": ["Candidate Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Bookmark removed" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/applications/my": {
+      "get": {
+        "summary": "Get current candidate's submitted applications",
+        "tags": ["Candidate Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Applications retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "applications": {
+                      "type": "array",
+                      "items": {
+                        "allOf": [
+                          { "$ref": "#/components/schemas/Application" },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "job": {
+                                "type": "object",
+                                "properties": {
+                                  "title": { "type": "string" },
+                                  "location": { "type": "string" },
+                                  "company": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": { "type": "string" }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/newsletter/subscribe": {
+      "post": {
+        "summary": "Subscribe email to weekly curations newsletter",
+        "tags": ["Newsletter"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "subscriber@domain.com" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Subscription successful" },
+          "400": { "description": "Invalid email / Already subscribed" }
+        }
+      }
+    },
+    "/admin/dashboard/stats": {
+      "get": {
+        "summary": "Retrieve administrative dashboard statistics",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Dashboard statistics loaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "metrics": {
+                      "type": "object",
+                      "properties": {
+                        "totalJobs": { "type": "integer" },
+                        "activeJobs": { "type": "integer" },
+                        "totalUsers": { "type": "integer" },
+                        "totalApplications": { "type": "integer" }
+                      }
+                    },
+                    "weeklyTrend": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": { "type": "string" },
+                          "value": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "jobsByCategory": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "category": { "type": "string" },
+                          "value": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "recentActivity": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": { "type": "string" },
+                          "description": { "type": "string" },
+                          "timeAgo": { "type": "string" }
+                        }
+                      }
+                    },
+                    "latestApplications": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "job": { "type": "string" },
+                          "status": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/jobs": {
+      "get": {
+        "summary": "List all job posts (Active, Draft, Closed) with pagination",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "experience", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete list of postings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "count": { "type": "integer" },
+                    "jobs": { "type": "array", "items": { "$ref": "#/components/schemas/Job" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new job post",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["companyName", "title", "category", "experience", "salary", "location", "type", "remote", "description"],
+                "properties": {
+                  "companyName": { "type": "string", "example": "Linear" },
+                  "title": { "type": "string", "example": "Senior Frontend Engineer" },
+                  "category": { "type": "string", "example": "Frontend" },
+                  "experience": { "type": "string", "example": "3-5 Years" },
+                  "salary": { "type": "string", "example": "₹20 - 30 LPA" },
+                  "location": { "type": "string", "example": "Bangalore, India" },
+                  "type": { "type": "string", "enum": ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERNSHIP"] },
+                  "remote": { "type": "string", "enum": ["REMOTE", "HYBRID", "ON_SITE"] },
+                  "skills": { "type": "array", "items": { "type": "string" }, "example": ["React", "TypeScript"] },
+                  "description": { "type": "string" },
+                  "requirements": { "type": "array", "items": { "type": "string" } },
+                  "responsibilities": { "type": "array", "items": { "type": "string" } },
+                  "benefits": { "type": "array", "items": { "type": "string" } },
+                  "status": { "type": "string", "enum": ["ACTIVE", "DRAFT", "CLOSED"], "default": "DRAFT" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Job created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" },
+                    "jobId": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/jobs/{id}": {
+      "put": {
+        "summary": "Edit an existing job post",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "category": { "type": "string" },
+                  "experience": { "type": "string" },
+                  "salary": { "type": "string" },
+                  "location": { "type": "string" },
+                  "type": { "type": "string", "enum": ["FULL_TIME", "PART_TIME", "CONTRACT", "INTERNSHIP"] },
+                  "remote": { "type": "string", "enum": ["REMOTE", "HYBRID", "ON_SITE"] },
+                  "skills": { "type": "array", "items": { "type": "string" } },
+                  "description": { "type": "string" },
+                  "requirements": { "type": "array", "items": { "type": "string" } },
+                  "responsibilities": { "type": "array", "items": { "type": "string" } },
+                  "benefits": { "type": "array", "items": { "type": "string" } },
+                  "status": { "type": "string", "enum": ["ACTIVE", "DRAFT", "CLOSED"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Job updated successfully" },
+          "404": { "description": "Job not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a job post",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Job and associated applications deleted" },
+          "404": { "description": "Job not found" }
+        }
+      }
+    },
+    "/admin/applications": {
+      "get": {
+        "summary": "List all applications submitted by candidates",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search candidate name, email, role" },
+          { "name": "status", "in": "query", "schema": { "type": "string" }, "description": "Filter by status (PENDING, REVIEWED, ACCEPTED, REJECTED)" },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of applications retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "applications": { "type": "array", "items": { "$ref": "#/components/schemas/Application" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/applications/{id}/status": {
+      "patch": {
+        "summary": "Update the status of a candidate application",
+        "tags": ["Admin Operations"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["PENDING", "REVIEWED", "ACCEPTED", "REJECTED"], "example": "REVIEWED" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Status updated successfully" },
+          "400": { "description": "Invalid status parameter" },
+          "404": { "description": "Application not found" }
+        }
+      }
+    }
+  }
+}
