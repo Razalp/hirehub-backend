@@ -1,48 +1,32 @@
-// ============================================================
-// src/controllers/applicationController.ts
-// Application Controller — Candidate application submissions & newsletters
-// ============================================================
-
 import { Request, Response, NextFunction } from "express";
-import prisma from "../config/prisma";
+import mongoose from "mongoose";
+import { Application, Job, NewsletterSubscription, User } from "../models";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import { createError } from "../middlewares/errorMiddleware";
 
-// ── POST /api/jobs/:id/apply ────────────────────────────────
+const formatStatus = (status: string) =>
+  status === "PENDING" ? "Pending" : status === "REVIEWED" ? "Reviewed" : status === "ACCEPTED" ? "Accepted" : "Rejected";
+
 export const applyToJob = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const jobId = req.params.id as string;
+    const jobId = String(req.params.id);
     const userId = req.user?.id;
     const { name, email, phone, coverLetter, useProfileResume } = req.body;
 
-    if (!userId) {
-      throw createError("User authentication context missing.", 401);
-    }
-
+    if (!userId) throw createError("User authentication context missing.", 401);
     if (!name || !email || !phone) {
       throw createError("Applicant name, email, and phone number are required.", 400);
     }
+    if (!mongoose.Types.ObjectId.isValid(jobId)) throw createError("Job posting not found.", 404);
 
-    // Verify job exists
-    const job = await prisma.job.findUnique({ where: { id: jobId } });
-    if (!job) {
-      throw createError("Job posting not found.", 404);
-    }
+    const job = await Job.findById(jobId);
+    if (!job) throw createError("Job posting not found.", 404);
 
-    // Check if duplicate application
-    const existingApplication = await prisma.application.findUnique({
-      where: {
-        jobId_candidateId: {
-          jobId,
-          candidateId: userId,
-        },
-      },
-    });
-
+    const existingApplication = await Application.findOne({ jobId, candidateId: userId });
     if (existingApplication) {
       throw createError("You have already applied for this job listing.", 400);
     }
@@ -50,42 +34,35 @@ export const applyToJob = async (
     let resumeUrl = "";
 
     if (useProfileResume === "true" || useProfileResume === true) {
-      // Find candidate profile
-      const profile = await prisma.profile.findUnique({ where: { userId } });
-      if (!profile || !profile.resumeUrl) {
+      const user = await User.findById(userId);
+      if (!user?.profile?.resumeUrl) {
         throw createError("No resume found in your profile. Please upload a file.", 400);
       }
-      resumeUrl = profile.resumeUrl;
+      resumeUrl = user.profile.resumeUrl;
     } else {
-      // Verify file upload
-      if (!req.file) {
-        throw createError("Resume file is required.", 400);
-      }
-      // Create static path link
+      if (!req.file) throw createError("Resume file is required.", 400);
       resumeUrl = `/uploads/${req.file.filename}`;
-
-      // Update candidate profile dynamically with new resume and phone if empty
-      await prisma.profile.update({
-        where: { userId },
-        data: {
-          resumeUrl,
-          phone: phone as string,
-        },
-      });
+      // Use a single $set to avoid MongoDB conflict on profile.updatedAt
+      // (mixing $set and $setOnInsert on the same timestamped subdocument causes a path conflict)
+      const user = await User.findById(userId);
+      const profileUpdate: Record<string, any> = {
+        "profile.resumeUrl": resumeUrl,
+        "profile.phone": phone,
+      };
+      if (!user?.profile?.skills) profileUpdate["profile.skills"] = [];
+      if (user?.profile?.isRemoteOnly === undefined) profileUpdate["profile.isRemoteOnly"] = false;
+      await User.findByIdAndUpdate(userId, { $set: profileUpdate });
     }
 
-    // Save Application record
-    const application = await prisma.application.create({
-      data: {
-        jobId,
-        candidateId: userId,
-        name: name as string,
-        email: email as string,
-        phone: phone as string,
-        resumeUrl,
-        coverLetter: coverLetter as string,
-        status: "PENDING",
-      },
+    const application = await Application.create({
+      jobId,
+      candidateId: userId,
+      name,
+      email,
+      phone,
+      resumeUrl,
+      coverLetter,
+      status: "PENDING",
     });
 
     res.status(201).json({
@@ -98,7 +75,6 @@ export const applyToJob = async (
   }
 };
 
-// ── GET /api/applications/my ────────────────────────────────
 export const getMyApplications = async (
   req: AuthRequest,
   res: Response,
@@ -106,55 +82,38 @@ export const getMyApplications = async (
 ): Promise<void> => {
   try {
     const userId = req.user?.id;
+    if (!userId) throw createError("Authentication required.", 401);
 
-    if (!userId) {
-      throw createError("Authentication required.", 401);
-    }
+    const applications = await Application.find({ candidateId: userId })
+      .populate({ path: "jobId", populate: { path: "companyId" } })
+      .sort({ createdAt: -1 });
 
-    const applications = await prisma.application.findMany({
-      where: { candidateId: userId },
-      include: {
+    const formatted = applications.map((application: any) => {
+      const job = application.jobId;
+      const company = job.companyId;
+      return {
+        id: application.id,
+        status: formatStatus(application.status),
+        date: "Just now",
+        createdAt: application.createdAt,
         job: {
-          include: {
-            company: {
-              select: {
-                name: true,
-                initial: true,
-                color: true,
-              },
-            },
-          },
+          id: job.id,
+          title: job.title,
+          location: job.location,
+          salary: job.salary,
+          company: company.name,
+          companyInitial: company.initial,
+          companyColor: company.color,
         },
-      },
-      orderBy: { createdAt: "desc" },
+      };
     });
 
-    const formatted = applications.map((a: any) => ({
-      id: a.id,
-      status: a.status === "PENDING" ? "Pending" : a.status === "REVIEWED" ? "Reviewed" : a.status === "ACCEPTED" ? "Accepted" : "Rejected",
-      date: "Just now", // Fallback text
-      createdAt: a.createdAt,
-      job: {
-        id: a.job.id,
-        title: a.job.title,
-        location: a.job.location,
-        salary: a.job.salary,
-        company: a.job.company.name,
-        companyInitial: a.job.company.initial,
-        companyColor: a.job.company.color,
-      },
-    }));
-
-    res.json({
-      success: true,
-      applications: formatted,
-    });
+    res.json({ success: true, applications: formatted });
   } catch (error) {
     next(error);
   }
 };
 
-// ── POST /api/newsletter/subscribe ──────────────────────────
 export const subscribeNewsletter = async (
   req: Request,
   res: Response,
@@ -162,22 +121,13 @@ export const subscribeNewsletter = async (
 ): Promise<void> => {
   try {
     const { email } = req.body;
+    if (!email) throw createError("Email is required.", 400);
 
-    if (!email) {
-      throw createError("Email is required.", 400);
-    }
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const existing = await NewsletterSubscription.findOne({ email: normalizedEmail });
+    if (existing) throw createError("Email is already subscribed.", 400);
 
-    const existing = await prisma.newsletterSubscription.findUnique({
-      where: { email },
-    });
-
-    if (existing) {
-      throw createError("Email is already subscribed.", 400);
-    }
-
-    await prisma.newsletterSubscription.create({
-      data: { email },
-    });
+    await NewsletterSubscription.create({ email: normalizedEmail });
 
     res.json({
       success: true,

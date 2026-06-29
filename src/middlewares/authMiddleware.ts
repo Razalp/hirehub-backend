@@ -1,14 +1,8 @@
-// ============================================================
-// src/middlewares/authMiddleware.ts
-// JWT Protection & Role-Based Access Control Implementation
-// ============================================================
-
-import { Request, Response, NextFunction } from "express";
+﻿import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import prisma from "../config/prisma";
+import { User } from "../models";
 import { createError } from "./errorMiddleware";
 
-// Extend Express Request to carry the authenticated user
 export interface AuthRequest extends Request {
   user?: {
     id: string;
@@ -17,20 +11,15 @@ export interface AuthRequest extends Request {
   };
 }
 
-// ── protect ────────────────────────────────────────────────
-// Validates access token and attaches req.user
 export const protect = async (
   req: AuthRequest,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
     let token: string | undefined;
 
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith("Bearer")
-    ) {
+    if (req.headers.authorization?.startsWith("Bearer")) {
       token = req.headers.authorization.split(" ")[1];
     }
 
@@ -38,7 +27,6 @@ export const protect = async (
       throw createError("Authentication token is missing. Please log in.", 401);
     }
 
-    // Verify token
     let decoded: any;
     try {
       decoded = jwt.verify(
@@ -52,16 +40,11 @@ export const protect = async (
       throw createError("Invalid token. Please authenticate.", 401);
     }
 
-    // Fetch user from DB
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-    });
-
+    const user = await User.findById(decoded.userId);
     if (!user) {
       throw createError("The user belonging to this token no longer exists.", 401);
     }
 
-    // Attach to request
     req.user = {
       id: user.id,
       email: user.email,
@@ -74,8 +57,6 @@ export const protect = async (
   }
 };
 
-// ── restrictTo ─────────────────────────────────────────────
-// Usage: router.use(restrictTo("ADMIN"))
 export const restrictTo = (...roles: string[]) => {
   return (req: AuthRequest, _res: Response, next: NextFunction): void => {
     try {

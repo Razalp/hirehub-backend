@@ -11,6 +11,10 @@ import {
   deleteJob,
   getApplications,
   updateApplicationStatus,
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
 } from "../controllers/adminController";
 import { adminLogin } from "../controllers/authController";
 import { protect, restrictTo } from "../middlewares/authMiddleware";
@@ -36,4 +40,11 @@ router.delete("/jobs/:id", deleteJob);
 router.get("/applications", getApplications);
 router.patch("/applications/:id/status", updateApplicationStatus);
 
+// User management
+router.get("/users", getUsers);
+router.post("/users", createUser);
+router.put("/users/:id", updateUser);
+router.delete("/users/:id", deleteUser);
+
 export default router;
+

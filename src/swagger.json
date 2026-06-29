@@ -106,7 +106,8 @@
                 "properties": {
                   "name": { "type": "string", "example": "Jane Doe" },
                   "email": { "type": "string", "format": "email", "example": "jane@company.com" },
-                  "password": { "type": "string", "minLength": 8, "example": "SecurePassword123" }
+                  "password": { "type": "string", "minLength": 8, "example": "SecurePassword123" },
+                  "isAdmin": { "type": "boolean", "default": false, "example": false, "description": "Set to true to create an ADMIN account (for seeding only). Default is false (CANDIDATE)." }
                 }
               }
             }
