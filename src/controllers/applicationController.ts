@@ -4,9 +4,6 @@ import { Application, Job, NewsletterSubscription, User } from "../models";
 import { AuthRequest } from "../middlewares/authMiddleware";
 import { createError } from "../middlewares/errorMiddleware";
 
-const formatStatus = (status: string) =>
-  status === "PENDING" ? "Pending" : status === "REVIEWED" ? "Reviewed" : status === "ACCEPTED" ? "Accepted" : "Rejected";
-
 export const applyToJob = async (
   req: AuthRequest,
   res: Response,
@@ -93,8 +90,8 @@ export const getMyApplications = async (
       const company = job.companyId;
       return {
         id: application.id,
-        status: formatStatus(application.status),
-        date: "Just now",
+        status: application.status,
+        date: application.createdAt,
         createdAt: application.createdAt,
         job: {
           id: job.id,
@@ -137,3 +134,5 @@ export const subscribeNewsletter = async (
     next(error);
   }
 };
+
+

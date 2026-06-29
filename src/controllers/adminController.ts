@@ -6,9 +6,6 @@ import { ApplicationStatus, JobStatus, JobType, RemoteOption } from "../models/t
 
 const regex = (value: string) => new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
 
-const formatStatus = (status: string) =>
-  status === "PENDING" ? "Pending" : status === "REVIEWED" ? "Reviewed" : status === "ACCEPTED" ? "Accepted" : "Rejected";
-
 const formatJobStatus = (status: string) =>
   status === "ACTIVE" ? "Active" : status === "DRAFT" ? "Draft" : "Closed";
 
@@ -100,7 +97,7 @@ export const getDashboardStats = async (
         id: application.id,
         name: application.name,
         job: application.jobId?.title ?? "Deleted job",
-        status: formatStatus(application.status),
+        status: application.status,
       })),
     });
   } catch (error) {
@@ -326,6 +323,12 @@ export const getApplications = async (
       ];
     }
 
+    if (req.query.jobId) {
+      const jobId = String(req.query.jobId);
+      if (!mongoose.Types.ObjectId.isValid(jobId)) throw createError("Job posting not found.", 404);
+      filter.jobId = jobId;
+    }
+
     if (status) filter.status = status as ApplicationStatus;
 
     const [apps, totalCount] = await Promise.all([
@@ -343,8 +346,9 @@ export const getApplications = async (
         phone: application.phone,
         job: application.jobId?.title ?? "Deleted job",
         resumeUrl: application.resumeUrl,
-        status: formatStatus(application.status),
-        date: "Just now",
+        status: application.status,
+        date: application.createdAt,
+        createdAt: application.createdAt,
       })),
     });
   } catch (error) {
@@ -383,9 +387,17 @@ export const updateApplicationStatus = async (
     const app = await Application.findById(id);
     if (!app) throw createError("Application not found.", 404);
 
-    await Application.findByIdAndUpdate(id, { status: targetStatus }, { runValidators: true });
+    const updatedApplication = await Application.findByIdAndUpdate(
+      id,
+      { status: targetStatus },
+      { new: true, runValidators: true }
+    );
 
-    res.json({ success: true, message: `Application status updated to ${status}.` });
+    res.json({
+      success: true,
+      message: `Application status updated to ${targetStatus}.`,
+      application: updatedApplication,
+    });
   } catch (error) {
     next(error);
   }
@@ -529,3 +541,5 @@ export const deleteUser = async (
     next(error);
   }
 };
+
+

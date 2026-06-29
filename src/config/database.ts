@@ -2,8 +2,7 @@ import mongoose from "mongoose";
 
 const mongoUri =
   process.env.MONGODB_URI ??
-  process.env.MONGO_URI ??
-  process.env.DATABASE_URL;
+  process.env.MONGO_URI;
 
 export const connectDB = async (): Promise<void> => {
   if (!mongoUri) {
@@ -18,3 +17,5 @@ export const connectDB = async (): Promise<void> => {
 export const disconnectDB = async (): Promise<void> => {
   await mongoose.disconnect();
 };
+
+
